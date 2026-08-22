@@ -681,8 +681,8 @@ function levelParams(mech, map, lvl, assist=0){
       moveFrac: d>0.55 ? 0.25 : 0,
       target: Math.round(lerp(1100, 2300, d)) };
     case "runner": return {d, final,
-      speed: lerp(260, 400, d),
-      interval: lerp(1.15, 0.62, d),
+      speed: lerp(285, 415, d),
+      interval: lerp(0.98, 0.58, d),
       time: Math.round(16 + 18*d),
       doubles: d>0.35, triples: d>0.7,
       blocks: d>0.3, airsaws: d>0.55 };
@@ -876,10 +876,18 @@ const Host = {
   showIntro(spin){
     const chosen = this.mech;
     const buttons = [];
-    if(S.rerolls > 0 || S.testMode) buttons.push({label:`${ic("dice",16)} Roll Again <small>(×${S.testMode?"∞":S.rerolls})</small>`, cls:"secondary",
-      fn:()=>this.reroll(), disabled:spin});
-    if(S.picks > 0 || S.testMode) buttons.push({label:`${ic("target",16)} Choose game <small>(×${S.testMode?"∞":S.picks})</small>`, cls:"blue",
-      fn:()=>this.pickerModal(), disabled:spin});
+    // always visible so players learn these options exist (bug report #7);
+    // at ×0 they lead to the shop instead of hiding
+    const haveRerolls = S.rerolls > 0 || S.testMode;
+    buttons.push({label:`${ic("dice",16)} Roll Again <small>(×${S.testMode?"∞":S.rerolls})</small>`, cls:"secondary",
+      fn: haveRerolls ? ()=>this.reroll()
+                      : ()=>{ toast(`${ic("dice",14)} Out of Roll Agains — get a set in the shop!`); shopModal(); },
+      disabled:spin});
+    const havePicks = S.picks > 0 || S.testMode;
+    buttons.push({label:`${ic("target",16)} Choose game <small>(×${S.testMode?"∞":S.picks})</small>`, cls:"blue",
+      fn: havePicks ? ()=>this.pickerModal()
+                    : ()=>{ toast(`${ic("target",14)} Out of choice tokens — get a set in the shop!`); shopModal(); },
+      disabled:spin});
     buttons.push({label:"PLAY", cls:"green", fn:()=>this.begin(), disabled:spin});
     const m = modal({title:`Zone ${this.map+1} — Level ${this.level}${this.level===25?" "+ic("crown",18):""}`,
       bodyHTML:`<div class="body">The wheel decides what you play…</div>
