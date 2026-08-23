@@ -3206,17 +3206,37 @@ function rewardsInfo(){
 const AVATARS = ["🙂","😎","🦊","🐼","🦄","👾","🐸","🐯"];
 function profileModal(){
   const p = S.profile;
+  // real account state, injected by the app shell when signed in (bug #14)
+  const acct = window.__WN_ACCOUNT || null;
+  const inApp = !!window.ReactNativeWebView;
   const totalLv = S.prog.reduce((a,b)=>a+b,0);
   const mapsDone = S.prog.filter(x=>x>=25).length;
   let att = 0, wins = 0;
   Object.values(S.stats).forEach(s=>{ att += s.a; wins += s.w; });
   const wr = att ? Math.round(wins/att*100) : 0;
   const row = (k,v)=>`<div class="lb-row"><span class="name">${k}</span><b>${v}</b></div>`;
+  const status = acct
+    ? `<span style="color:var(--green);font-size:11px"> ✔ signed in</span>
+       <div style="color:var(--dim);font-size:12px;font-weight:400;margin-top:2px">${acct.email}</div>`
+    : (p.registered && !inApp
+        ? '<span style="color:var(--green);font-size:11px"> ✔ registered</span>'
+        : '<span style="color:var(--dim);font-size:11px"> guest</span>');
+  const buttons = [];
+  if(inApp && !acct) buttons.push({label:"Sign in / create account", cls:"green",
+    fn:()=>{ window.ReactNativeWebView.postMessage(JSON.stringify({type:"account"})); }});
+  buttons.push({label:(acct || p.registered || inApp) ? "Edit profile" : "Register", cls:acct||inApp?"secondary":"green", fn:registerModal});
+  buttons.push({label:`${ic("bell",15)} Notifications: ${S.notifications?"ON":"OFF"}`, cls:"secondary", fn:toggleNotifications});
+  if(acct) buttons.push({label:"Sign out", cls:"red", fn:()=>{
+    modal({title:"Sign out?", bodyHTML:`<div class="body">Your progress stays safe in your account — sign back in any time to continue.</div>`, buttons:[
+      {label:"Sign out", cls:"red", fn:()=>{ window.ReactNativeWebView.postMessage(JSON.stringify({type:"signout"})); }},
+      {label:"Cancel", cls:"secondary"},
+    ]});
+  }});
+  buttons.push({label:"Close", cls:"secondary"});
   modal({title:ic("person",18)+" Profile", bodyHTML:
     `<div style="text-align:center;font-size:46px;line-height:1.2">${p.avatar}</div>
      <div style="text-align:center;font-weight:700;font-size:17px;margin:2px 0 10px">${p.name}
-       ${p.registered ? '<span style="color:var(--green);font-size:11px"> ✔ registered</span>'
-                      : '<span style="color:var(--dim);font-size:11px"> guest</span>'}</div>` +
+       ${status}</div>` +
     row(ic("map",14)+" Zones completed", `${mapsDone} / 5`) +
     row(ic("check",14)+" Levels completed", `${totalLv} / 125`) +
     row(ic("target",14)+" Attempts → wins", `${att} → ${wins} (${wr}%)`) +
@@ -3224,17 +3244,12 @@ function profileModal(){
     row(ic("cal",14)+" Daily streak", `${S.dailyStreak} day${S.dailyStreak===1?"":"s"}`) +
     row(ic("coin",14)+" Coins", S.coins) +
     `<div class="note">Public profile shows maps & levels completed only (GDD §7) — continues used stays private to you.</div>`,
-    buttons:[
-      {label: p.registered ? "Edit profile" : "Register", cls:"green", fn:registerModal},
-      {label:`${ic("bell",15)} Notifications: ${S.notifications?"ON":"OFF"}`, cls:"secondary", fn:toggleNotifications},
-      {label:"Close", cls:"secondary"},
-    ]});
+    buttons});
 }
 function registerModal(){
   const p = S.profile;
   const m = modal({title: p.registered ? "Edit profile" : "Create your profile", bodyHTML:
-    `<div class="body">Pick a name and avatar. In production this would link a real account
-     (email / Apple / Google) for cloud saves and the leaderboard — the prototype stores it on this device.</div>
+    `<div class="body">Pick a name and avatar — they're what other players see on the leaderboard.</div>
      <input id="reg-name" class="reg-input" maxlength="14" placeholder="Player name"
        value="${p.registered ? p.name.replace(/"/g,"&quot;") : ""}">
      <div id="avrow">${AVATARS.map(a=>
