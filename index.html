@@ -276,6 +276,16 @@
     .lvn.current{width:50px; height:50px; margin:-25px 0 0 -25px;}
     .lvn.locked{width:34px; height:34px; margin:-17px 0 0 -17px;}
   }
+  /* ---- Modal scroll hint ---- */
+  .scrollhint{
+    position:sticky; bottom:-22px; left:0; right:0; text-align:center;
+    font-size:26px; line-height:1; font-weight:700; color:#ffcf5c;
+    pointer-events:none; margin-top:-8px;
+    text-shadow:0 0 8px rgba(0,0,0,.9), 0 2px 4px rgba(0,0,0,.8);
+    animation:hintbob 1.1s ease-in-out infinite;
+    transition:opacity .25s;
+  }
+  @keyframes hintbob{0%,100%{transform:translateY(0)}50%{transform:translateY(5px)}}
   /* ---- Toasts ---- */
   #toasts{
     position:absolute; top:58px; left:0; right:0; display:flex; flex-direction:column;
@@ -592,6 +602,21 @@ function modal(opts){
   });
   modalRoot.appendChild(m);
   modalRoot.classList.add("open");
+  // scroll hint: when a popup overflows, show a bouncing chevron until the
+  // player reaches the bottom (bug report #8)
+  setTimeout(()=>{
+    if(m.scrollHeight > m.clientHeight + 8){
+      const hint = document.createElement("div");
+      hint.className = "scrollhint";
+      hint.textContent = "⌄";
+      m.appendChild(hint);
+      const upd = ()=>{
+        hint.style.opacity = (m.scrollTop + m.clientHeight >= m.scrollHeight - 16) ? "0" : "1";
+      };
+      m.addEventListener("scroll", upd);
+      upd();
+    }
+  }, 30);
   return m;
 }
 function closeModal(){ modalRoot.classList.remove("open"); modalRoot.innerHTML=""; }
@@ -943,6 +968,14 @@ const Host = {
       if(!this.lastTs) this.lastTs = ts;
       const dt = Math.min(0.05, (ts - this.lastTs)/1000);
       this.lastTs = ts;
+      // bonus play ends automatically once the bonus-coin cap is reached —
+      // otherwise a good player can grind forever for nothing (bug #9)
+      if(this.freeplay){
+        const capSecs = Math.max(6, this.result ? this.result.coins : 10);
+        if((Date.now() - this.freeplayT0)/1000 >= capSecs){
+          this.stop(); this.endFreeplay(); return;
+        }
+      }
       this.game.update(dt);
       FX.update(dt);
       ctx.save();
@@ -1267,6 +1300,8 @@ class Flyer{
     }
     // recycle / spawn
     while(this.obs.length && this.obs[0].x < -60) this.obs.shift();
+    // a revive can clear the whole list — reseed or checkpoints never spawn again (bug #10)
+    if(!this.obs.length) this.addOb(W + 160);
     const last = this.obs[this.obs.length-1];
     if(last && last.x < W) this.addOb(last.x + this.spacing);
     // pass + collide
@@ -3261,6 +3296,7 @@ window.WN = {
   grant(){ S.coins+=1000; S.continues+=5; S.lives+=5; S.picks+=5; save(); refreshTop(); },
 };
 </script>
+
 <script>
 if("serviceWorker" in navigator && location.protocol==="https:"){
   addEventListener("load", ()=>navigator.serviceWorker.register("sw.js"));
