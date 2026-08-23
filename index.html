@@ -30,8 +30,8 @@
   html.light .iconbtn, html.light .mp, html.light .av, html.light .btn.togrow{
     background:linear-gradient(180deg,#ffffff,#e9edf7); border-color:#cfd6e8; box-shadow:0 3px 0 #b9c2d8; color:var(--text);}
   html.light .iconbtn:active, html.light .mp:active{box-shadow:0 1px 0 #b9c2d8;}
-  html.light .wm-t{background:linear-gradient(180deg,#ffffff,#e7ebf6); border-color:#cfd6e8; box-shadow:0 4px 0 #b9c2d8, inset 0 2px 0 rgba(255,255,255,.9);}
-  html.light .wm-t.q{color:#c8891f; background:linear-gradient(180deg,#fffdf4,#f6eed6); border-color:var(--gold); box-shadow:0 4px 0 #d9c9a0, 0 0 16px rgba(255,207,92,.35);}
+  /* the wordmark keeps its dark-tile look in both themes (bug #16) */
+  html.light .wm-t:not(.g):not(.q){color:#f2f4fd;}
   html.light .mapcard{background:linear-gradient(180deg,#ffffff,#eef1f9); box-shadow:0 4px 0 #ccd4e6;}
   html.light .mapcard:active{box-shadow:0 2px 0 #ccd4e6;}
   html.light .progressbar{background:#d8deec; box-shadow:inset 0 1px 3px rgba(35,42,68,.2);}
