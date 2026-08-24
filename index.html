@@ -691,8 +691,18 @@ function modal(opts){
 }
 function closeModal(){ modalRoot.classList.remove("open"); modalRoot.innerHTML=""; }
 
-/* ---------------- Simulated ads (GDD §9.1 — placements only, no real SDK) ------- */
+/* ---------------- Ads: native AdMob via the shell, simulated on the web ---------- */
+let _adCb = null;
+window.__WN_AD_DONE = function(ok){ const cb = _adCb; _adCb = null; if(cb) cb(!!ok); };
 function rewardedAd(label, onDone){
+  if(window.__WN_ADS){
+    _adCb = ok => {
+      if(ok){ logEv("ad_rewarded", {label}); onDone(); }
+      else toast(ic("tv",14)+" No ad available right now — try again in a minute.");
+    };
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:"ad", kind:"rewarded"}));
+    return;
+  }
   const m = modal({title:"Rewarded Ad", bodyHTML:
     `<div class="adbox"><div class="adspin">${ic("tv",30)}</div><div>Simulated rewarded video</div><div id="adcount">3</div></div>
      <div class="body">${label}</div>`, buttons:[]});
@@ -710,6 +720,11 @@ function maybeInterstitial(then){
   if(S.removeAds || now - S.lastAdTs < INTERSTITIAL_FLOOR_MS){ then(); return; }
   S.lastAdTs = now; save();
   logEv("ad_interstitial", {});
+  if(window.__WN_ADS){
+    _adCb = ()=>then();
+    window.ReactNativeWebView.postMessage(JSON.stringify({type:"ad", kind:"interstitial"}));
+    return;
+  }
   modal({title:"", bodyHTML:
     `<div class="adbox"><div class="adspin">${ic("tv",30)}</div><div>Simulated interstitial</div><div id="adcount">2</div></div>
      <div class="note">Capped: level-fail + every 3rd win, ≥45s apart (GDD §9.1). Remove in Shop.</div>`, buttons:[]});
@@ -3365,7 +3380,7 @@ const FAKE_ADS = [
 let adIdx = 0;
 function refreshBanner(){
   const b = $("banner");
-  if(S.removeAds){ b.style.display = "none"; return; }
+  if(S.removeAds || window.__WN_ADS){ b.style.display = "none"; return; }
   b.style.display = "flex";
 }
 function rotateBanner(){
