@@ -609,6 +609,17 @@ function load(){
 }
 function save(){ try{ store.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){} }
 
+/* ---- analytics: events flow to the app shell, which batches them to Supabase.
+       The web prototype logs nothing. ---- */
+const EV_SESSION = Math.random().toString(36).slice(2) + Date.now().toString(36);
+function logEv(name, props){
+  if(!window.ReactNativeWebView) return;
+  try{
+    window.ReactNativeWebView.postMessage(JSON.stringify(
+      {type:"ev", name, props:props||{}, session:EV_SESSION, ts:Date.now()}));
+  }catch(e){}
+}
+
 function applyTheme(){
   document.documentElement.classList.toggle("light", !!S.lightMode);
   // let the native shell (Expo) recolor its status/navigation areas to match
@@ -689,7 +700,7 @@ function rewardedAd(label, onDone){
   const iv = setInterval(()=>{
     n--; const c = document.getElementById("adcount");
     if(c) c.textContent = n;
-    if(n<=0){ clearInterval(iv); closeModal(); onDone(); }
+    if(n<=0){ clearInterval(iv); closeModal(); logEv("ad_rewarded", {label}); onDone(); }
   }, 1000);
 }
 function maybeInterstitial(then){
@@ -698,6 +709,7 @@ function maybeInterstitial(then){
   if(S.completions < 5){ then(); return; }
   if(S.removeAds || now - S.lastAdTs < INTERSTITIAL_FLOOR_MS){ then(); return; }
   S.lastAdTs = now; save();
+  logEv("ad_interstitial", {});
   modal({title:"", bodyHTML:
     `<div class="adbox"><div class="adspin">${ic("tv",30)}</div><div>Simulated interstitial</div><div id="adcount">2</div></div>
      <div class="note">Capped: level-fail + every 3rd win, ≥45s apart (GDD §9.1). Remove in Shop.</div>`, buttons:[]});
@@ -949,6 +961,7 @@ const Host = {
   },
 
   reroll(){
+    logEv("reroll_used", {});
     if(!S.testMode) S.rerolls--;
     this.mech = rollMechanic(this.mech.id);   // the rolled game must not repeat
     S.pendingRoll = {m:this.map, l:this.level, id:this.mech.id}; save();
@@ -1009,6 +1022,7 @@ const Host = {
       buttons:[{label:"Cancel — keep the roll", cls:"secondary", fn:()=>this.showIntro(false)}]});
     m.querySelectorAll(".mp").forEach(b=>b.onclick = ()=>{
       if(!S.testMode) S.picks--;
+      logEv("choice_token_used", {});
       this.mech = MECHS[+b.dataset.i];
       // begin() records the pick via recordPlayed() — the next roll excludes it
       save(); refreshTop();
@@ -1064,6 +1078,7 @@ const Host = {
     const key = this.map+"-"+this.level;
     const st = S.stats[key] || (S.stats[key] = {a:0,w:0});
     st.a++; save();
+    logEv("level_start", {mech:this.mech.id, zone:this.map+1, lvl:this.level});
     this.runLoop();
   },
 
@@ -1104,21 +1119,25 @@ const Host = {
     if(this.freeplay){ this.endFreeplay(); return; }   // bonus play: no life, no continue flow
     // near-miss framing (reward-psychology research): show how close the attempt got
     const prog = Math.round(Math.max(0, Math.min(1, this.game.progress ? this.game.progress() : 0))*100);
+    logEv("level_fail", {mech:this.mech.id, zone:this.map+1, lvl:this.level, prog});
     const buttons = [];
     if(S.continues > 0 || S.testMode){
       buttons.push({label:`${ic("rewind",15)} Use Continue <small>(${S.testMode?"∞":S.continues+" left"})</small>`, cls:"green", fn:()=>{
         if(!S.testMode){ S.continues--; }
         S.continuesUsed++; save(); refreshTop();
+        logEv("continue_used", {source:"item", mech:this.mech.id, zone:this.map+1, lvl:this.level});
         this.revive();
       }});
     } else if(!this.adContinueUsed){
       buttons.push({label:ic("tv",15)+" Watch ad → free continue", cls:"blue", fn:()=>{
         this.adContinueUsed = true; S.continuesUsed++; save();
+        logEv("continue_used", {source:"ad", mech:this.mech.id, zone:this.map+1, lvl:this.level});
         rewardedAd("Continue granted — same attempt, same mechanic.", ()=>this.revive());
       }});
     }
     buttons.push({label:ic("heartbroken",15)+" Give up (−1 life, re-rolls mechanic)", cls:"red", fn:()=>{
       if(!S.testMode) S.lives = Math.max(0, S.lives-1);
+      logEv("level_giveup", {mech:this.mech.id, zone:this.map+1, lvl:this.level});
       const key = this.map+"-"+this.level;
       S.fails[key] = (S.fails[key]||0) + 1;   // feeds the comfort assist
       save(); refreshTop();
@@ -1172,6 +1191,7 @@ const Host = {
       if(!S.cosmetics.includes(this.map+1) && this.map+1 < 5) S.cosmetics.push(this.map+1);
     }
     save(); refreshTop();
+    logEv("level_win", {mech:this.mech.id, zone:this.map+1, lvl:this.level, first:firstClear});
     this.result = {coins, uniqueGain, mapDone, final, breatherCoins, chestGain};
     // announce and roll straight into bonus play with a 5-second shield
     Sfx.play("win"); confetti();
@@ -1221,6 +1241,7 @@ const Host = {
           this.runLoop();
         }},
         {label:ic("map",15)+" Return to the map (−1 life)", cls:"red", fn:()=>{
+          logEv("level_quit", {mech:Host.mech?Host.mech.id:null, zone:Host.map+1, lvl:Host.level});
           if(!S.testMode) S.lives = Math.max(0, S.lives-1);
           this._paused=null; S.pendingRoll=null; save(); refreshTop();
         }},
@@ -3025,6 +3046,7 @@ function livesModal(){
 // injected by the shell as window.__WN_IAP once Play returns the products.
 const IAP_FALLBACK = { coins_small:"$0.99", coins_large:"$2.99", remove_ads:"$1.99" };
 function shopModal(){
+  logEv("shop_open", {});
   const inApp = !!window.ReactNativeWebView;
   const iapPrices = Object.assign({}, IAP_FALLBACK, window.__WN_IAP || {});
   const iaps = inApp ? [
@@ -3095,6 +3117,7 @@ function grantIAP(id){
     S.removeAds = true; toast(ic("noads",14)+" Ads removed — thank you!");
   }
   else return;
+  logEv("iap_purchase", {product:id});
   save(); refreshTop(); Sfx.play("coin"); confetti();
   if(typeof refreshBanner === "function") refreshBanner();
   // refresh an open shop so OWNED / balances update
@@ -3223,6 +3246,7 @@ function openChest(){
     buttons:[
       {label:`Open! <small>(${S.chests} left)</small>`, cls:"green", fn:()=>{
         S.chests--;
+        logEv("chest_open", {});
         const roll = Math.floor(Math.random()*3);
         let icon, txt;
         if(roll===0){ S.lives++;     icon=ic("heart",50); txt="+1 Life"; }
@@ -3375,6 +3399,7 @@ function checkDailyBonus(){
   S.lastDaily = today;
   save();
   const dayIdx = ((S.dailyStreak-1) % 7) + 1;
+  logEv("daily_gift", {day:dayIdx, streak:S.dailyStreak});
   // escalating 7-day gift — a small daily drip building to a golden Day 7; cycle repeats
   const GIFT_TABLE = [
     {coins:50},
@@ -3416,6 +3441,7 @@ function checkDailyBonus(){
 /* ---------------- boot ---------------- */
 document.querySelectorAll(".ic[data-ic]").forEach(el=>{ el.innerHTML = SVGICONS[el.dataset.ic] || ""; });
 refreshTop(); renderHome();
+logEv("session_start", {levels:S.prog.reduce((a,b)=>a+b,0), light:!!S.lightMode, streak:S.dailyStreak});
 checkDailyBonus();
 
 /* debug hooks for testing */
