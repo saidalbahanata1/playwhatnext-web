@@ -587,6 +587,7 @@ function defaultSave(){
     profile:{name:"Guest", avatar:"🙂", registered:false},
     continuesUsed:0, notifications:false,
     testMode:false,              // ∞ lives/continues/tokens + all levels unlocked
+    devUnlocked:false,           // tester-mode toggle hidden until 7 taps on Settings title
   };
 }
 // storage can be blocked entirely (file preview, sandboxed iframe) — fall back to memory
@@ -3020,7 +3021,17 @@ function livesModal(){
     ]});
 }
 
+// Real-money catalog (Google Play, inside the app only). Localized prices are
+// injected by the shell as window.__WN_IAP once Play returns the products.
+const IAP_FALLBACK = { coins_small:"$0.99", coins_large:"$2.99", remove_ads:"$1.99" };
 function shopModal(){
+  const inApp = !!window.ReactNativeWebView;
+  const iapPrices = Object.assign({}, IAP_FALLBACK, window.__WN_IAP || {});
+  const iaps = inApp ? [
+    {id:"coins_small", icon:ic("coin",26),  name:"Handful of Coins", sub:"+500 coins"},
+    {id:"coins_large", icon:ic("coins",26), name:"Chest of Coins",   sub:"+2,000 coins — best value"},
+    {id:"remove_ads",  icon:ic("noads",26), name:"Remove ads",       sub:"One-time — the banner is gone forever", owned:()=>S.removeAds},
+  ] : [];
   const items = [
     {icon:ic("target",26), name:"Choice tokens ×3", sub:"Pick which game a level plays — your call, not the wheel's", cost:"250 "+ic("coin",11),
       can:()=>S.coins>=250, fn:()=>{ S.coins-=250; S.picks+=3; }},
@@ -3038,26 +3049,57 @@ function shopModal(){
       can:()=>S.coins>=200, fn:()=>{ S.coins-=200; S.continues++; }},
     {icon:ic("rewind",26), name:"Continue 3-pack", sub:"Save 100 coins", cost:"500 "+ic("coin",11),
       can:()=>S.coins>=500, fn:()=>{ S.coins-=500; S.continues+=3; }},
-    {icon:ic("coins",26), name:"Coin pack (small)", sub:"Simulated IAP — free in prototype", cost:"+300 "+ic("coin",11),
-      can:()=>true, fn:()=>{ S.coins+=300; }},
-    {icon:ic("noads",26), name:"Remove ads", sub:"One-time — disables interstitials & banner", cost: S.removeAds?"OWNED":"IAP",
-      can:()=>!S.removeAds, fn:()=>{ S.removeAds=true; }},
   ];
-  if(S.completions<6 && !S.starterBought){
-    items.unshift({icon:ic("gift",26), name:"Starter pack (80% off!)", sub:"+400 coins, 2 continues, 2 choice tokens & 3 lives", cost:"IAP",
-      can:()=>true, fn:()=>{ S.coins+=400; S.continues+=2; S.picks+=2; S.lives+=3; S.starterBought=true; }});
+  if(!inApp){
+    // web prototype keeps the simulated purchases
+    items.push({icon:ic("coins",26), name:"Coin pack (small)", sub:"Simulated IAP — free in prototype", cost:"+300 "+ic("coin",11),
+      can:()=>true, fn:()=>{ S.coins+=300; }});
+    items.push({icon:ic("noads",26), name:"Remove ads", sub:"One-time — disables interstitials & banner", cost: S.removeAds?"OWNED":"IAP",
+      can:()=>!S.removeAds, fn:()=>{ S.removeAds=true; }});
+    if(S.completions<6 && !S.starterBought){
+      items.unshift({icon:ic("gift",26), name:"Starter pack (80% off!)", sub:"+400 coins, 2 continues, 2 choice tokens & 3 lives", cost:"IAP",
+        can:()=>true, fn:()=>{ S.coins+=400; S.continues+=2; S.picks+=2; S.lives+=3; S.starterBought=true; }});
+    }
   }
+  const iapBody = iaps.length ?
+    iaps.map(p=>{
+      const owned = p.owned && p.owned();
+      return `<div class="shopitem"><div style="display:flex">${p.icon}</div>
+        <div class="si-info"><b>${p.name}</b><small>${p.sub}</small></div>
+        <button data-iap="${p.id}" ${owned?"disabled":""}>${owned?"OWNED":iapPrices[p.id]}</button></div>`;
+    }).join("") + `<div class="body" style="margin:10px 0 4px"><b>${ic("coin",13)} With your coins</b></div>` : "";
   const body = items.map((it,i)=>
     `<div class="shopitem"><div style="display:flex">${it.icon}</div>
       <div class="si-info"><b>${it.name}</b><small>${it.sub}</small></div>
       <button data-i="${i}" ${it.can()?"":"disabled"}>${it.cost}</button></div>`).join("");
-  const m = modal({title:ic("cart",18)+" Shop", bodyHTML: body +
-    `<div class="note">Convenience & cosmetics only — no pay-to-win (GDD §10). IAPs are simulated.</div>`,
+  const m = modal({title:ic("cart",18)+" Shop", bodyHTML: iapBody + body +
+    `<div class="note">Convenience & cosmetics only — no pay-to-win (GDD §10). ${inApp?"Payments are processed securely by Google Play.":"IAPs are simulated."}</div>`,
     buttons:[{label:"Close", cls:"secondary"}]});
-  m.querySelectorAll(".shopitem button").forEach(b=>{
+  m.querySelectorAll(".shopitem button[data-i]").forEach(b=>{
     b.onclick = ()=>{ const it = items[+b.dataset.i]; if(!it.can()) return;
       it.fn(); save(); refreshTop(); Sfx.play("coin"); closeModal(); shopModal(); };
   });
+  m.querySelectorAll(".shopitem button[data-iap]").forEach(b=>{
+    b.onclick = ()=>{
+      b.disabled = true; setTimeout(()=>{ b.disabled = false; }, 4000);  // debounce double-taps
+      window.ReactNativeWebView.postMessage(JSON.stringify({type:"iap", product:b.dataset.iap}));
+    };
+  });
+}
+// called by the shell when Google Play confirms a purchase
+function grantIAP(id){
+  if(id==="coins_small"){ S.coins += 500; toast(ic("coin",14)+" +500 coins!"); }
+  else if(id==="coins_large"){ S.coins += 2000; toast(ic("coins",14)+" +2,000 coins!"); }
+  else if(id==="remove_ads"){
+    if(S.removeAds) return;   // restore may re-deliver — stay idempotent
+    S.removeAds = true; toast(ic("noads",14)+" Ads removed — thank you!");
+  }
+  else return;
+  save(); refreshTop(); Sfx.play("coin"); confetti();
+  if(typeof refreshBanner === "function") refreshBanner();
+  // refresh an open shop so OWNED / balances update
+  const open = document.querySelector(".modal");
+  if(open && open.innerText.includes("Shop")){ closeModal(); shopModal(); }
 }
 $("btn-shop").onclick = shopModal;
 
@@ -3108,7 +3150,9 @@ $("btn-settings").onclick = ()=>{
       tog("sound","Sound", S.sound, "sound"),
       tog("shake","Screen shake", S.shake, "shake"),
       tog("shapes","Colorblind symbols", S.cbSymbols, "cbSymbols"),
-      tog("flask","Tester mode — ∞ items, all levels", S.testMode, "testMode"),
+      // tester mode stays hidden in release builds — unlocked by tapping the
+      // Settings title 7 times (or already on)
+      ...((S.devUnlocked || S.testMode) ? [tog("flask","Tester mode — ∞ items, all levels", S.testMode, "testMode")] : []),
       {label:"Reset all progress", cls:"red", fn:()=>{
         modal({title:"Really reset?", bodyHTML:`<div class="body">All progress, coins and items will be wiped.</div>`, buttons:[
           {label:"Yes, wipe it", cls:"red", fn:()=>{ S = defaultSave(); save(); refreshTop(); renderHome(); showScreen("screen-home"); }},
@@ -3117,6 +3161,20 @@ $("btn-settings").onclick = ()=>{
       }},
       {label:"Close", cls:"secondary"},
     ]});
+  // hidden unlock: 7 taps on the title reveal the tester-mode toggle
+  const m = modalRoot.querySelector(".modal");
+  const h = m && m.querySelector("h3");
+  if(h){
+    let taps = 0;
+    h.onclick = ()=>{
+      if(S.devUnlocked) return;
+      if(++taps >= 7){
+        S.devUnlocked = true; save();
+        toast(ic("flask",14)+" Tester mode unlocked");
+        closeModal(); $("btn-settings").onclick();
+      }
+    };
+  }
 };
 
 /* ---------------- toasts & notifications ---------------- */
@@ -3370,6 +3428,7 @@ window.WN = {
     closeModal(); Host.begin();
   },
   grant(){ S.coins+=1000; S.continues+=5; S.lives+=5; S.picks+=5; save(); refreshTop(); },
+  grantIAP,
 };
 </script>
 
