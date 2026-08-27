@@ -3059,13 +3059,13 @@ function livesModal(){
 
 // Real-money catalog (Google Play, inside the app only). Localized prices are
 // injected by the shell as window.__WN_IAP once Play returns the products.
-const IAP_FALLBACK = { coins_small:"$0.99", coins_large:"$2.99", remove_ads:"$1.99" };
+const IAP_FALLBACK = { coins_500:"$0.99", coins_large:"$2.99", remove_ads:"$1.99" };
 function shopModal(){
   logEv("shop_open", {});
   const inApp = !!window.ReactNativeWebView;
   const iapPrices = Object.assign({}, IAP_FALLBACK, window.__WN_IAP || {});
   const iaps = inApp ? [
-    {id:"coins_small", icon:ic("coin",26),  name:"Handful of Coins", sub:"+500 coins"},
+    {id:"coins_500", icon:ic("coin",26),  name:"Handful of Coins", sub:"+500 coins"},
     {id:"coins_large", icon:ic("coins",26), name:"Chest of Coins",   sub:"+2,000 coins — best value"},
     {id:"remove_ads",  icon:ic("noads",26), name:"Remove ads",       sub:"One-time — the banner is gone forever", owned:()=>S.removeAds},
   ] : [];
@@ -3125,7 +3125,7 @@ function shopModal(){
 }
 // called by the shell when Google Play confirms a purchase
 function grantIAP(id){
-  if(id==="coins_small"){ S.coins += 500; toast(ic("coin",14)+" +500 coins!"); }
+  if(id==="coins_500"){ S.coins += 500; toast(ic("coin",14)+" +500 coins!"); }
   else if(id==="coins_large"){ S.coins += 2000; toast(ic("coins",14)+" +2,000 coins!"); }
   else if(id==="remove_ads"){
     if(S.removeAds) return;   // restore may re-deliver — stay idempotent
